@@ -1,6 +1,7 @@
 import type { DutyEvent } from "./duty.ts";
 import type { Deps } from "./harness.ts";
 import { tellLead } from "./inbox.ts";
+import { detectProviderFailure } from "./provider-failure.ts";
 import { watchProviderFailure } from "./recovery.ts";
 import { refText } from "./refs.ts";
 import type { AgentStatus } from "./runtime/types.ts";
@@ -11,6 +12,16 @@ import type { Lane } from "./store-types.ts";
 export const WATCH_LINES = 30;
 /** Statuses in which a lane can be stalled: no turn is running. A `working` lane is never restarted on a screen alone. */
 const STALLED: ReadonlySet<AgentStatus> = new Set(["idle", "done", "shell"]);
+/**
+ * The one failure that outranks a lane's own WAITING report: when omo cannot reach any account, the lane is not waiting
+ * on a blocker it chose, it is stalled, and no nudge can fix it (the incident this recovery exists for).
+ */
+const RECOVERABLE_WHILE_WAITING = "accounts-blocked";
+
+function stalledScreen(lane: Lane, seen: string | undefined): boolean {
+  if (lane.status !== "waiting") return true;
+  return seen !== undefined && detectProviderFailure(seen)?.kind === RECOVERABLE_WHILE_WAITING;
+}
 
 /**
  * The provider-failure half of one duty lane pass: on a pane that is not working, reads the last 30 lines, restarts the
@@ -24,11 +35,12 @@ export async function recoverLane(
   now: number,
   events: DutyEvent[],
 ): Promise<boolean> {
-  if (lane.status === "waiting" || !STALLED.has(st)) return false;
+  if (!STALLED.has(st)) return false;
   const screen = await d.runtimes
     .for(lane.sessionRef)
     .read(lane.sessionRef, WATCH_LINES)
     .catch(() => undefined);
+  if (!stalledScreen(lane, screen)) return false;
   const outcome = await watchProviderFailure(d, lane, now, screen);
   if (outcome.kind === "recovered" || outcome.kind === "failed") {
     const when = new Date(outcome.next).toISOString();

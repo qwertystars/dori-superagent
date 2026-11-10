@@ -166,7 +166,7 @@ When a delivery failed after the text may already have reached the pane, only En
 
 ### Nudges at 10, 20 and 40 minutes
 
-A lane that has not reported for 10 minutes, and whose pane is not working, gets `prompts/nudge.md` in its pane, again at 20, and at 40 the duty loop sends the lead `[ESCALATE <key>]`. A lane that reported `--status waiting`, or whose pane is `blocked`, is left alone.
+A lane that has not reported for 10 minutes, and whose pane is not working, gets `prompts/nudge.md` in its pane, again at 20, and at 40 the duty loop sends the lead `[ESCALATE <key>]`. A lane that reported `--status waiting`, or whose pane is `blocked`, is left alone. One exception: a waiting lane whose pane shows omo's own "All Claude accounts ... are currently blocked" sentence is recovered like any other provider failure, because no nudge can fix it.
 
 ### Merge needs a CLEAR receipt at the exact head and green checks
 
