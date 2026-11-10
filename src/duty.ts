@@ -1,4 +1,5 @@
 import { DeliveryUncertain, failureDetail } from "./delivery.ts";
+import { recoverLane } from "./duty-recover.ts";
 import { type Deps, prompt } from "./harness.ts";
 import { runHook } from "./hooks.ts";
 import { flushInbox, sendOrThrow, tellLead } from "./inbox.ts";
@@ -63,8 +64,11 @@ export async function dutyTick(d: Deps): Promise<DutyEvent[]> {
         events.push({ lane: lane.key, action: "lost" });
         continue;
       }
+      if (await recoverLane(d, lane, st, now, events)) continue;
       if (st === "working") {
         lane.lastActivityAt = now;
+        // A working pane is the clearest progress there is: any failure record from an earlier stall is over.
+        if (lane.recovery !== undefined) delete lane.recovery;
         d.store.saveLane(lane);
         continue;
       }
