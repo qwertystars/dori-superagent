@@ -17,6 +17,7 @@ import type { SessionRef } from "./runtime/types.ts";
 import {
   KEEP_RUNS,
   KEY_RE,
+  type GateEntry,
   type Item,
   type Lane,
   type LoopRun,
@@ -43,7 +44,7 @@ const checkedId = (id: string): string => {
 
 export class Store {
   constructor(readonly root: string = process.env["DORI_HOME"] ?? join(homedir(), ".dori")) {
-    for (const d of ["lanes", "inbox", "briefs", "receipts", "backlog", "loop/runs", "duty"])
+    for (const d of ["lanes", "inbox", "briefs", "receipts", "backlog", "loop/runs", "duty", "gate"])
       mkdirSync(join(root, d), { recursive: true });
   }
 
@@ -199,6 +200,15 @@ export class Store {
 
   clearStop(of: "loop" | "duty" = "loop"): void {
     rmSync(join(this.root, of, "stop"), { force: true });
+  }
+
+  /** The sessions paused because a Claude limit window is spent (`gate/state.json`), oldest first. */
+  gate(): GateEntry[] {
+    return this.readJson<{ entries?: GateEntry[] }>(join(this.root, "gate", "state.json"))?.entries ?? [];
+  }
+
+  saveGate(entries: readonly GateEntry[]): void {
+    this.writeJson(join(this.root, "gate", "state.json"), { entries });
   }
 
   lastRun(): LoopRun | undefined {

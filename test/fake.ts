@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Deps } from "../src/harness.ts";
+import type { GateConfig, LimitsReading } from "../src/limit-windows.ts";
 import type { Exec } from "../src/runtime/exec.ts";
 import { HcRuntime } from "../src/runtime/hc/index.ts";
 import { HerdrRuntime } from "../src/runtime/herdr/index.ts";
@@ -26,6 +27,7 @@ type Pane = {
   foreground?: string | { name: string; argv: string[] }[] | undefined;
   agent?: string;
   pgid?: number;
+  cwd?: string;
 };
 
 export class World {
@@ -44,6 +46,10 @@ export class World {
   promptHook = new Map<string, (text: string) => void>();
   /** Session roots the recovery kickoff searches for the lane's transcript. */
   sessionRoots: string[] = [];
+  /** What the account-window reading returns (undefined: unknown, which pauses nothing). */
+  limits: LimitsReading | undefined;
+  /** The pause thresholds, driven like the defaults: 95% used and 60s of slack after the reset. */
+  gateConfig: GateConfig = { percent: 95, slackMs: 60_000 };
   private gets = new Map<string, number>();
   /** `pane process-info` fails (exit 1) for every pane */
   processInfoFails = false;
@@ -133,7 +139,12 @@ export class World {
       this.gets.set(id!, n);
       this.getHook.get(id!)?.(n);
       return ok({
-        pane: { pane_id: id, agent: pane.status === "shell" ? null : (pane.agent ?? "pi"), agent_status: pane.status },
+        pane: {
+          pane_id: id,
+          agent: pane.status === "shell" ? null : (pane.agent ?? "pi"),
+          agent_status: pane.status,
+          ...(pane.cwd === undefined ? {} : { cwd: pane.cwd }),
+        },
       });
     }
     if (group === "pane" && verb === "read") {
@@ -175,6 +186,7 @@ export class World {
   deps(opts: { runtime?: RuntimeKind } = {}): Deps {
     const kind = opts.runtime ?? "herdr";
     const quiet = { env: {}, sleep: async () => {} };
+    const w = this;
     return {
       store: new Store(mkdtempSync(join(tmpdir(), "dori-test-"))),
       runtimes: new Runtimes(kind, (k) =>
@@ -185,10 +197,14 @@ export class World {
       now: () => this.clock,
       agentCmd: "omo",
       doriCmd: "dori",
-      sessionRoots: this.sessionRoots,
+      get sessionRoots() {
+        return w.sessionRoots;
+      },
       sleep: async () => {},
       host: () => this.host,
       usage: this.recorder,
+      limits: () => this.limits,
+      gateConfig: () => this.gateConfig,
     };
   }
 }
