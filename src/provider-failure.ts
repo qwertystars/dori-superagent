@@ -1,12 +1,13 @@
 /**
  * A provider failure visible on a pane. `kind` names the failure, `match` the phrase the recovery kickoff says
- * interrupted the lane. Only the last 30 lines count, and a phrase sitting inside a `/regex/`, backticks, quotes or after
- * a `file.ts:` name is a lane quoting code, not the provider's own error.
+ * interrupted the lane, and `lines` the pane lines the match covers, verbatim, so a report can quote the exact error.
+ * Only the last 30 lines count, and a phrase sitting inside a `/regex/`, backticks, quotes or after a `file.ts:` name is
+ * a lane quoting code, not the provider's own error.
  *
  * A `spanning` rule is omo's own rendered sentence, which the terminal soft-wraps: it may be split across a newline
  * between any two of its words, but it must start on the line being read, so the first failure on the screen still wins.
  */
-export type ProviderFailure = { readonly kind: string; readonly match: string };
+export type ProviderFailure = { readonly kind: string; readonly match: string; readonly lines: readonly string[] };
 
 type Rule = {
   readonly kind: string;
@@ -76,26 +77,44 @@ function withoutQuoted(line: string): string {
   return rest;
 }
 
+/** The span of a rule's regex hit inside the text searched, in characters. */
+type Hit = { readonly from: number; readonly to: number };
+
 /**
- * The phrase that proves the failure: null when every mention is quoted or follows a file name, and null for a spanning
+ * The span that proves the failure: null when every mention is quoted or follows a file name, and null for a spanning
  * phrase that begins on a later line than `at` (that line reports it).
  */
-function unquotedHit(bare: readonly string[], at: number, rule: Rule): string | null {
+function unquotedHit(bare: readonly string[], at: number, rule: Rule): Hit | null {
   const first = bare[at] ?? "";
   const text = rule.spanning === true ? bare.slice(at, at + SPAN_LINES).join(" ") : first;
   const hit = rule.re.exec(text);
   if (!hit || hit.index >= first.length) return null;
   if (rule.context !== undefined && !rule.context.test(text)) return null;
-  return FILE_BEFORE.test(first.slice(0, hit.index)) ? null : rule.phrase;
+  if (FILE_BEFORE.test(first.slice(0, hit.index))) return null;
+  return { from: hit.index, to: hit.index + hit[0].length };
+}
+
+/** The original screen lines the hit covers: its first line, plus any a spanning phrase wraps onto. */
+function hitLines(raw: readonly string[], bare: readonly string[], at: number, rule: Rule, hit: Hit): string[] {
+  if (rule.spanning !== true) return [raw[at] ?? ""];
+  const out: string[] = [];
+  let start = 0;
+  for (const [i, line] of bare.slice(at, at + SPAN_LINES).entries()) {
+    const end = start + line.length;
+    if (start < hit.to && end > hit.from) out.push(raw[at + i] ?? "");
+    start = end + 1;
+  }
+  return out.length > 0 ? out : [raw[at] ?? ""];
 }
 
 /** The first provider failure in the last 30 lines of a pane's screen, or null. */
 export function detectProviderFailure(screenText: string): ProviderFailure | null {
-  const bare = screenText.split("\n").slice(-30).map(withoutQuoted);
+  const raw = screenText.split("\n").slice(-30);
+  const bare = raw.map(withoutQuoted);
   for (let at = 0; at < bare.length; at++) {
     for (const rule of RULES) {
-      const match = unquotedHit(bare, at, rule);
-      if (match !== null) return { kind: rule.kind, match };
+      const hit = unquotedHit(bare, at, rule);
+      if (hit !== null) return { kind: rule.kind, match: rule.phrase, lines: hitLines(raw, bare, at, rule, hit) };
     }
   }
   return null;

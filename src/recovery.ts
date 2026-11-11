@@ -10,6 +10,20 @@ import type { Lane } from "./store-types.ts";
 export const BACKOFF_MINUTES = [5, 10, 20, 40, 60] as const;
 const LAST_BACKOFF_MINUTES = 60;
 
+/** Restarts before the lane is escalated to the lead instead: beyond this a restart cannot fix the pane. */
+export const DEFAULT_MAX_ATTEMPTS = 3;
+
+/**
+ * The attempt cap: `DORI_RECOVER_MAX_ATTEMPTS` when it is a positive integer, else 3. A stale auth login or a blocked
+ * account is a failure restarts never clear, so the duty loop gives up and asks the lead instead of restarting forever.
+ */
+export function maxAttempts(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = (env["DORI_RECOVER_MAX_ATTEMPTS"] ?? "").trim();
+  if (!/^\d+$/.test(raw)) return DEFAULT_MAX_ATTEMPTS;
+  const n = Number(raw);
+  return n >= 1 ? n : DEFAULT_MAX_ATTEMPTS;
+}
+
 const EXIT_POLLS = 20;
 const EXIT_POLL_MS = 500;
 const EXIT_TEXT = "/exit";
@@ -25,6 +39,7 @@ export type RecoveryOutcome =
   | { readonly kind: "watching" }
   | { readonly kind: "moving" }
   | { readonly kind: "waiting"; readonly until: number }
+  | { readonly kind: "held" }
   | { readonly kind: "recovered"; readonly attempt: number; readonly next: number; readonly failure: ProviderFailure }
   | {
       readonly kind: "failed";
@@ -32,18 +47,22 @@ export type RecoveryOutcome =
       readonly next: number;
       readonly reason: string;
       readonly failure: ProviderFailure;
-    };
+    }
+  | { readonly kind: "escalated"; readonly attempt: number; readonly failure: ProviderFailure };
 
 /**
  * A lane's provider failure, watched pass by pass: the first sighting is recorded; an unchanged failing screen waits
- * out the lane's retry gate and then restarts the agent; a screen that changed since the last pass is progress, which
- * resets the ladder and drops the gate; a screen without the failure clears the record entirely.
+ * out the lane's retry gate and then restarts the agent, up to `maxAttempts` restarts; a screen that changed since the
+ * last pass is progress, which resets the ladder and drops the gate; a screen without the failure clears the record
+ * entirely. Once the cap is reached and the last gate has passed, the lane is escalated - recorded, never restarted
+ * again - because a pane a restart cannot clear (a stale login, a blocked account) would otherwise restart forever.
  */
 export async function watchProviderFailure(
   d: Deps,
   lane: Lane,
   now: number,
   screen: string | undefined,
+  cap: number = maxAttempts(),
 ): Promise<RecoveryOutcome> {
   if (screen === undefined) return { kind: "none" };
   const hash = screenHash(screen);
@@ -66,10 +85,21 @@ export async function watchProviderFailure(
     d.store.saveLane(lane);
     return { kind: "moving" };
   }
+  if (prev.escalatedAt !== undefined) return { kind: "held" };
   if (prev.nextRetryAt !== undefined && now < prev.nextRetryAt) {
     lane.recovery = { ...prev, screenHash: hash, ...seen };
     d.store.saveLane(lane);
     return { kind: "waiting", until: prev.nextRetryAt };
+  }
+  if (prev.attempts >= cap) {
+    lane.recovery = { ...prev, escalatedAt: now, screenHash: hash, ...seen };
+    lane.log.push({
+      at: now,
+      kind: "recover",
+      text: `escalated after ${prev.attempts} attempts: ${failure.kind} never cleared, so no further restart`,
+    });
+    d.store.saveLane(lane);
+    return { kind: "escalated", attempt: prev.attempts, failure };
   }
   const attempt = prev.attempts + 1;
   const next = now + backoffMs(attempt);

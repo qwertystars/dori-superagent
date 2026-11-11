@@ -40,14 +40,33 @@ describe("provider failure detection", () => {
     expect(detectProviderFailure(wrap(BLOCKED_RATE))).toEqual({
       kind: "accounts-blocked",
       match: "all Claude accounts blocked",
+      lines: [`❯ ${BLOCKED_RATE}`],
     });
     expect(detectProviderFailure(wrap(BLOCKED_AUTH))?.kind).toBe("accounts-blocked");
+  });
+
+  test("the recorded lines are the pane's own text, covering the wrap when the phrase spans one", () => {
+    const one = detectProviderFailure(wrap(BLOCKED_RATE))!.lines;
+    expect(one).toEqual([`❯ ${BLOCKED_RATE}`]);
+    const short = detectProviderFailure(wrap("API Error: usage limit reached for this account"))!.lines;
+    expect(short).toEqual(["❯ API Error: usage limit reached for this account"]);
+    const wrapped = detectProviderFailure(BLOCKED_WRAPPED_80.join("\n"))!.lines;
+    expect(wrapped).toEqual([BLOCKED_WRAPPED_80[0]!]);
+    const seventy = detectProviderFailure(BLOCKED_WRAPPED_72.join("\n"))!.lines;
+    expect(seventy).toEqual(BLOCKED_WRAPPED_72);
+  });
+
+  test("a span's second line is recorded only when the phrase itself wrapped there", () => {
+    const screen = [...BLOCKED_WRAPPED_72, "next line"].join("\n");
+    expect(detectProviderFailure(screen)!.lines).toEqual(BLOCKED_WRAPPED_72);
+    expect(detectProviderFailure([BLOCKED_RATE, "next line"].join("\n"))!.lines).toEqual([BLOCKED_RATE]);
   });
 
   test("the block is detected when the pane wraps it", () => {
     expect(detectProviderFailure(wrap(BLOCKED_WRAPPED_80.join("\n")))).toEqual({
       kind: "accounts-blocked",
       match: "all Claude accounts blocked",
+      lines: [`❯ ${BLOCKED_WRAPPED_80[0]!}`],
     });
     expect(detectProviderFailure(BLOCKED_WRAPPED_80.join("\n"))?.kind).toBe("accounts-blocked");
     expect(detectProviderFailure(BLOCKED_WRAPPED_72.join("\n"))?.kind).toBe("accounts-blocked");
@@ -115,7 +134,11 @@ describe("provider failure detection", () => {
 
   test("the first failure on the screen wins, and its record is stably the same text", () => {
     const screen = wrap("overloaded_error: upstream\nquota exceeded");
-    expect(detectProviderFailure(screen)).toEqual({ kind: "overloaded", match: "overloaded provider" });
+    expect(detectProviderFailure(screen)).toEqual({
+      kind: "overloaded",
+      match: "overloaded provider",
+      lines: ["❯ overloaded_error: upstream"],
+    });
     expect(detectProviderFailure(screen)).toEqual(detectProviderFailure(screen));
   });
 });

@@ -56,6 +56,17 @@ export async function recoverLane(
     });
   } else if (outcome.kind === "cleared") {
     events.push({ lane: lane.key, action: "recovery-cleared" });
+  } else if (outcome.kind === "escalated") {
+    // The cap is reached and the last gate has passed: a restart is no longer the answer, so the lead gets the pane's
+    // own error verbatim, once, and the lane waits on a person instead of restarting forever.
+    const shown = outcome.failure.lines.join(" / ");
+    const count = `${outcome.attempt} attempt${outcome.attempt === 1 ? "" : "s"}`;
+    await tellLead(
+      d,
+      `[ESCALATE ${lane.key}] recovery gave up after ${count}; restart cannot clear this. Pane shows: ${shown}`,
+      "duty",
+    );
+    events.push({ lane: lane.key, action: "recover-escalated", detail: `${outcome.failure.kind}: ${shown}` });
   }
   return outcome.kind !== "none" && outcome.kind !== "cleared";
 }

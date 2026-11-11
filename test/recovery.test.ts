@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { backoffMs, BACKOFF_MINUTES, screenHash, watchProviderFailure } from "../src/recovery.ts";
+import { backoffMs, BACKOFF_MINUTES, maxAttempts, screenHash, watchProviderFailure } from "../src/recovery.ts";
 import { kickoffText, laneTranscript, sessionDirFor } from "../src/session-transcript.ts";
 import { href, World } from "./fake.ts";
 
@@ -98,7 +98,7 @@ describe("the provider-failure watch", () => {
     expect(saved.log.at(-1)!.kind).toBe("recover");
   });
 
-  test("the retry gate holds: nothing restarts before nextRetryAt, and the ladder is 5/10/20/40/60", async () => {
+  test("the retry gate holds: nothing restarts before nextRetryAt, and the ladder is 5/10/20", async () => {
     const w = new World();
     const d = lane(w);
     const pane = w.addPane("w1:p2", "idle");
@@ -113,33 +113,31 @@ describe("the provider-failure watch", () => {
     let now = 0;
     const delays: number[] = [];
     await watchProviderFailure(d, d.store.lane("usage-lane")!, now, screen);
-    for (const [wait, expectRestart] of [
-      [0, true],
-      [4, false],
-      [1, true],
-      [9, false],
-      [1, true],
-      [19, false],
-      [1, true],
-      [39, false],
-      [1, true],
-      [59, false],
+    for (const [wait, expected] of [
+      [0, "recovered"],
+      [4, "waiting"],
+      [1, "recovered"],
+      [9, "waiting"],
+      [1, "recovered"],
+      [19, "waiting"],
+      [1, "escalated"],
+      [1, "held"],
     ] as const) {
       now += wait * 60_000;
       const out = await watchProviderFailure(d, d.store.lane("usage-lane")!, now, screen);
-      expect(out.kind === "recovered").toBe(expectRestart);
+      expect(out.kind).toBe(expected);
       if (out.kind === "recovered") delays.push(backoffMs(out.attempt) / 60_000);
     }
-    expect(delays).toEqual([5, 10, 20, 40, 60]);
-    expect(d.store.lane("usage-lane")!.recovery!.attempts).toBe(5);
+    expect(delays).toEqual([5, 10, 20]);
+    expect(d.store.lane("usage-lane")!.recovery).toMatchObject({ attempts: 3, escalatedAt: 35 * 60_000 });
   });
 
-  test("a screen without the failure clears the record, resetting the ladder", async () => {
+  test("a screen without the failure clears the record, resetting the ladder and any escalation", async () => {
     const w = new World();
     const d = lane(w);
     w.addPane("w1:p2", "idle");
     const saved = { ...d.store.lane("usage-lane")! };
-    saved.recovery = { attempts: 3, screenHash: "x", kind: "rate limit", match: "rate limit", at: 0 };
+    saved.recovery = { attempts: 3, escalatedAt: 5, screenHash: "x", kind: "rate limit", match: "rate limit", at: 0 };
     d.store.saveLane(saved);
     expect(await watchProviderFailure(d, d.store.lane("usage-lane")!, 1000, "❯ working on it\n")).toEqual({
       kind: "cleared",
@@ -156,6 +154,46 @@ describe("the provider-failure watch", () => {
     const d = lane(w);
     expect(await watchProviderFailure(d, d.store.lane("usage-lane")!, 0, undefined)).toEqual({ kind: "none" });
     expect(d.store.lane("usage-lane")!.recovery).toBeUndefined();
+  });
+});
+
+describe("the attempt cap", () => {
+  test("an env override moves the cap, and an invalid value falls back to 3", () => {
+    expect(maxAttempts({} as NodeJS.ProcessEnv)).toBe(3);
+    expect(maxAttempts({ DORI_RECOVER_MAX_ATTEMPTS: "5" } as NodeJS.ProcessEnv)).toBe(5);
+    for (const bad of ["0", "-2", "1.5", "three", ""])
+      expect(maxAttempts({ DORI_RECOVER_MAX_ATTEMPTS: bad } as NodeJS.ProcessEnv)).toBe(3);
+  });
+
+  test("a cap of N restarts N times, then escalates once the last gate has passed and holds every pass after", async () => {
+    const w = new World();
+    const d = lane(w);
+    w.addPane("w1:p2", "shell");
+    const screen = "429 Too Many Requests\n";
+    let now = 0;
+    await watchProviderFailure(d, d.store.lane("usage-lane")!, now, screen);
+    const seen: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      now += 20 * 60_000;
+      const out = await watchProviderFailure(d, d.store.lane("usage-lane")!, now, screen, 1);
+      seen.push(out.kind);
+    }
+    expect(seen).toEqual(["recovered", "escalated", "held", "held"]);
+    expect(d.store.lane("usage-lane")!.recovery).toMatchObject({ attempts: 1, escalatedAt: now - 40 * 60_000 });
+  });
+
+  test("a screen that moves after escalation resets it, so the ladder starts over", async () => {
+    const w = new World();
+    const d = lane(w);
+    const pane = w.addPane("w1:p2", "shell");
+    const saved = { ...d.store.lane("usage-lane")! };
+    saved.recovery = { attempts: 3, escalatedAt: 5, screenHash: "x", kind: "usage limit", match: "usage limit", at: 0 };
+    d.store.saveLane(saved);
+    pane.screen = "usage limit reached\nretry attempt 4\n";
+    expect(await watchProviderFailure(d, d.store.lane("usage-lane")!, 1000, pane.screen)).toEqual({ kind: "moving" });
+    expect(d.store.lane("usage-lane")!.recovery).toMatchObject({ attempts: 0 });
+    expect(d.store.lane("usage-lane")!.recovery!.escalatedAt).toBeUndefined();
+    expect(pane.ran).toEqual([]);
   });
 });
 
