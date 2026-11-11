@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { detectProviderFailure } from "../src/provider-failure.ts";
+import { detectProviderFailure, isAuthFailure } from "../src/provider-failure.ts";
 
 const wrap = (line: string): string => `Todo\n❯ ${line}\n──────\n❯\n──────\n`;
 
@@ -79,6 +79,13 @@ describe("provider failure detection", () => {
       const screen = `${BLOCKED_RATE.slice(0, at)}\n${BLOCKED_RATE.slice(at)}`;
       expect(detectProviderFailure(screen)?.kind).toBe("accounts-blocked");
     }
+  });
+
+  test("only the authentication verdict is an auth failure, not the ambiguous rate-or-auth one", () => {
+    expect(isAuthFailure(detectProviderFailure(wrap(BLOCKED_AUTH))!)).toBe(true);
+    expect(isAuthFailure(detectProviderFailure(wrap(BLOCKED_RATE))!)).toBe(false);
+    const usage = detectProviderFailure(wrap("API Error: usage limit reached for this account"))!;
+    expect(isAuthFailure(usage)).toBe(false);
   });
 
   test("the rate limit in the headline's parenthetical is the block, not a separate rate limit", () => {

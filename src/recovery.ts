@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { failureDetail, shq } from "./delivery.ts";
 import type { Deps } from "./harness.ts";
-import { detectProviderFailure, type ProviderFailure } from "./provider-failure.ts";
+import { detectProviderFailure, isAuthFailure, type ProviderFailure } from "./provider-failure.ts";
 import type { AgentStatus } from "./runtime/types.ts";
 import { kickoffText, laneTranscript } from "./session-transcript.ts";
 import type { Lane } from "./store-types.ts";
@@ -48,7 +48,13 @@ export type RecoveryOutcome =
       readonly reason: string;
       readonly failure: ProviderFailure;
     }
-  | { readonly kind: "escalated"; readonly attempt: number; readonly failure: ProviderFailure };
+  | {
+      readonly kind: "escalated";
+      readonly attempt: number;
+      readonly failure: ProviderFailure;
+      /** `auth`: a restart cannot clear it, so none was tried; `cap`: the restart ladder is spent. */
+      readonly reason: "auth" | "cap";
+    };
 
 /**
  * A lane's provider failure, watched pass by pass: the first sighting is recorded; an unchanged failing screen waits
@@ -56,6 +62,8 @@ export type RecoveryOutcome =
  * last pass is progress, which resets the ladder and drops the gate; a screen without the failure clears the record
  * entirely. Once the cap is reached and the last gate has passed, the lane is escalated - recorded, never restarted
  * again - because a pane a restart cannot clear (a stale login, a blocked account) would otherwise restart forever.
+ * An authentication failure skips the ladder entirely: the first gate that would restart escalates instead, at 0 attempts,
+ * because a stale copied login is not something restarting the agent can fix.
  */
 export async function watchProviderFailure(
   d: Deps,
@@ -91,15 +99,18 @@ export async function watchProviderFailure(
     d.store.saveLane(lane);
     return { kind: "waiting", until: prev.nextRetryAt };
   }
-  if (prev.attempts >= cap) {
+  const auth = isAuthFailure(failure);
+  if (prev.attempts >= cap || auth) {
     lane.recovery = { ...prev, escalatedAt: now, screenHash: hash, ...seen };
     lane.log.push({
       at: now,
       kind: "recover",
-      text: `escalated after ${prev.attempts} attempts: ${failure.kind} never cleared, so no further restart`,
+      text: auth
+        ? `escalated: ${failure.kind} at ${prev.attempts} attempts is an authentication failure, which a restart cannot clear`
+        : `escalated after ${prev.attempts} attempts: ${failure.kind} never cleared, so no further restart`,
     });
     d.store.saveLane(lane);
-    return { kind: "escalated", attempt: prev.attempts, failure };
+    return { kind: "escalated", attempt: prev.attempts, failure, reason: auth ? "auth" : "cap" };
   }
   const attempt = prev.attempts + 1;
   const next = now + backoffMs(attempt);

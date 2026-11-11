@@ -25,6 +25,12 @@ const RATE_CONTEXT = /\b(?:rate|limit(?:ed)?|too many requests)\b/i;
  * including either side of the hyphen in the provider name.
  */
 const ACCOUNTS_BLOCKED = /all\s+claude\s+accounts\s+for\s+anthropic\s*-\s*subscription\s+are\s+currently\s+blocked/i;
+/**
+ * The same sentence's authentication verdict, `(authentication error)`, which line 23 prints: a stale copied login,
+ * the one failure a restart of the lane can never clear. `(rate limit or auth errors)` names no authentication error
+ * and stays an ordinary blocked-accounts failure. Whitespace is flexible because the parenthetical can wrap.
+ */
+const AUTHENTICATION_ERROR = /authentication\s+error/i;
 const FILE_BEFORE = /\S+\.(?:ts|tsx|js|jsx|mjs|py|md|json|sh|toml|yaml|yml)[:,]?\s*$/;
 const SPANS: readonly (readonly [string, string])[] = [
   ["/", "/"],
@@ -106,6 +112,9 @@ function hitLines(raw: readonly string[], bare: readonly string[], at: number, r
   }
   return out.length > 0 ? out : [raw[at] ?? ""];
 }
+
+/** True when the matched lines name an authentication failure rather than a failure a restart can clear. */
+export const isAuthFailure = (failure: ProviderFailure): boolean => AUTHENTICATION_ERROR.test(failure.lines.join("\n"));
 
 /** The first provider failure in the last 30 lines of a pane's screen, or null. */
 export function detectProviderFailure(screenText: string): ProviderFailure | null {

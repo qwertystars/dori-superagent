@@ -6,6 +6,9 @@ import { setup } from "./harness-setup.ts";
 const LIMIT = "API Error: usage limit reached for this account\n❯\n";
 /** The auth variant of omo's blocked-accounts sentence: the one the copied OAuth login went stale on. */
 const AUTH = "Error: All Claude accounts for anthropic-subscription are currently blocked (authentication error).\n❯";
+/** The ambiguous variant: it names a rate limit as well, so it is not an authentication failure. */
+const RATE_OR_AUTH =
+  "Error: All Claude accounts for anthropic-subscription are currently blocked (rate limit or auth errors).\n❯";
 
 /** Starts "limit-lane" on `screen`; the agent leaves for its shell on /exit and the failure stays on the screen. */
 async function limitLane(screen: string) {
@@ -31,7 +34,7 @@ async function limitLane(screen: string) {
 
 /** The lead's escalation messages, exactly as the report path wrote them. */
 const escalations = (lead: { received: string[] }): string[] =>
-  lead.received.filter((m) => m.startsWith("[ESCALATE limit-lane] recovery gave up"));
+  lead.received.filter((m) => m.startsWith("[ESCALATE limit-lane]"));
 
 /** One sighting, then three restarts at their gates (1, 6, 16 min), so a fourth is due at 36. */
 async function threeRestarts(tick: (min: number, shown?: string) => Promise<unknown[]>) {
@@ -89,15 +92,54 @@ describe("the recovery attempt cap", () => {
     expect(restarts()).toHaveLength(3);
   });
 
-  test("the auth-variant blocked-accounts sentence escalates after 3 attempts with its exact text", async () => {
+  test("the auth-variant blocked-accounts sentence escalates on the first restart-due pass, with no restart", async () => {
     const { lead, restarts, tick } = await limitLane(AUTH);
+    await tick(0);
+    expect(restarts()).toEqual([]);
+    expect(escalations(lead)).toEqual([]);
+    await tick(1);
+    expect(restarts()).toEqual([]);
+    expect(escalations(lead)).toEqual([
+      "[ESCALATE limit-lane] authentication failure; restart cannot clear this, so none was tried. Pane shows: Error: All Claude accounts for anthropic-subscription are currently blocked (authentication error).",
+    ]);
+  });
+
+  test("one escalation across hours of auth ticks: no restart, no repeat, no nudge", async () => {
+    const { d, lead, restarts, tick } = await limitLane(AUTH);
+    let escalated = 0;
+    for (let min = 0; min <= 200; min += 1) {
+      escalated += (await tick(min)).filter((e) => e.action === "recover-escalated").length;
+    }
+    expect(escalated).toBe(1);
+    expect(escalations(lead)).toHaveLength(1);
+    expect(restarts()).toEqual([]);
+    expect(d.store.lane("limit-lane")!.recovery).toMatchObject({ attempts: 0 });
+    expect(d.store.lane("limit-lane")!.nudges).toBe(0);
+  });
+
+  test("the ambiguous '(rate limit or auth errors)' variant keeps the 3-attempt ladder", async () => {
+    const { lead, restarts, tick } = await limitLane(RATE_OR_AUTH);
     await threeRestarts(tick);
     expect(restarts()).toHaveLength(3);
+    expect(escalations(lead)).toEqual([]);
     await tick(36);
     expect(restarts()).toHaveLength(3);
     expect(escalations(lead)).toEqual([
-      "[ESCALATE limit-lane] recovery gave up after 3 attempts; restart cannot clear this. Pane shows: Error: All Claude accounts for anthropic-subscription are currently blocked (authentication error).",
+      "[ESCALATE limit-lane] recovery gave up after 3 attempts; restart cannot clear this. Pane shows: Error: All Claude accounts for anthropic-subscription are currently blocked (rate limit or auth errors).",
     ]);
+  });
+
+  test("an auth escalation resets when the error clears, exactly as for the cap", async () => {
+    const { d, restarts, tick } = await limitLane(AUTH);
+    await tick(0);
+    await tick(1);
+    expect(d.store.lane("limit-lane")!.recovery).toMatchObject({ attempts: 0, escalatedAt: expect.any(Number) });
+    await tick(2, "editing loop.ts, running the tests\n");
+    expect(d.store.lane("limit-lane")!.recovery).toBeUndefined();
+    expect(restarts()).toEqual([]);
+    await tick(3, AUTH);
+    expect(d.store.lane("limit-lane")!.recovery).toMatchObject({ attempts: 0 });
+    expect(d.store.lane("limit-lane")!.recovery!.escalatedAt).toBeUndefined();
   });
 
   test("DORI_RECOVER_MAX_ATTEMPTS moves the cap for the duty loop", async () => {
