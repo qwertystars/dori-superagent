@@ -22,7 +22,7 @@ export function gateStatus(d: Deps): void {
     const held = e.held === undefined ? "" : ` held: ${e.held}`;
     const next = e.next === undefined ? "" : ` next: ${e.next}`;
     console.log(
-      `${e.target.padEnd(20)} ${e.phase.padEnd(17)} ${e.ref.padEnd(14)} ${e.windowId}${usage} until ${iso(e.resumeAt)}${held}${next}`,
+      `${e.target.padEnd(20)} ${e.phase.padEnd(17)} ${e.ref.padEnd(14)} ${e.windowId}${usage} ${e.model} until ${iso(e.resumeAt)}${held}${next}`,
     );
   }
 }

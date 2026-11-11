@@ -109,8 +109,9 @@ export type GateEntry = {
   closedAt: number;
   at: number;
   resumeAt: number;
-  source: "usage-cache" | "pane";
   windowId: string;
+  /** The model its own session file named when it was gated, so the record says why this session and not another. */
+  model: string;
   usedPercent?: number;
   probe: number;
   next?: GateNext;

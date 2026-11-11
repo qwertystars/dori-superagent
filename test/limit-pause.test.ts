@@ -1,17 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
 import { dutyTick } from "../src/duty.ts";
 import { COMPACT_COMMAND, PAUSE_COMMAND, RESUME_COMMAND, wakeText } from "../src/limit-command.ts";
 import { report, startLane } from "../src/lanes.ts";
 import { href } from "./fake.ts";
 import { setup } from "./harness-setup.ts";
+import { opusLead, sessionFile } from "./session-fixtures.ts";
 
 const MIN = 60_000;
 const OPUS_RESET = "2026-01-05T00:00:00.000Z";
 const resetAt = Date.parse(OPUS_RESET);
 const LEAD = "w1:p1";
-const WAKE =
-  "Your Opus limit has reset. Re-read your previous session transcript (no transcript found), your work folder /work/lead and the DAG harvest files, recover context, then continue - do not restart.";
+const wakeFor = (transcript: string) =>
+  `Your Opus limit has reset. Re-read your previous session transcript ${transcript}, your work folder /work/lead and the DAG harvest files, recover context, then continue - do not restart.`;
 
 const spent = (usedPercent: number, resetsAt?: string) => ({
   accounts: [
@@ -24,23 +24,22 @@ const spent = (usedPercent: number, resetsAt?: string) => ({
   ],
 });
 
-function world(usedPercent = 97, resetsAt = OPUS_RESET) {
+/** The lead's own session file is where its model is read from, so a world always writes one with `model`. */
+function world(usedPercent = 97, resetsAt: string | null = OPUS_RESET, model = "claude-opus-4-7") {
   const s = setup();
-  s.w.limits = spent(usedPercent, resetsAt);
-  s.w.panes.get(LEAD)!.cwd = "/work/lead";
-  return s;
+  s.w.limits = spent(usedPercent, resetsAt ?? undefined);
+  const file = opusLead(s.w, s.d, [model]);
+  return { ...s, file };
 }
 
 function noResetWorld(usedPercent = 100) {
-  const s = setup();
-  s.w.limits = spent(usedPercent);
-  s.w.panes.get(LEAD)!.cwd = "/work/lead";
-  return s;
+  return world(usedPercent, null);
 }
 
-const gate = (s: ReturnType<typeof world>) => s.d.store.gate();
-const received = (s: ReturnType<typeof world>) => s.w.panes.get(LEAD)!.received;
-const queued = (s: ReturnType<typeof world>) => s.d.store.queued(href(LEAD)).map((m) => m.text);
+type Side = ReturnType<typeof setup>;
+const gate = (s: Side) => s.d.store.gate();
+const received = (s: Side) => s.w.panes.get(LEAD)!.received;
+const queued = (s: Side) => s.d.store.queued(href(LEAD)).map((m) => m.text);
 
 describe("detecting a spent Opus window", () => {
   test("the first tick records paused-for-limit, types /compact, and reports nothing to the paused lead", async () => {
@@ -50,7 +49,7 @@ describe("detecting a spent Opus window", () => {
       target: "lead",
       ref: LEAD,
       phase: "paused-for-limit",
-      source: "usage-cache",
+      model: "claude-opus-4-7",
       windowId: "claude:7d_opus",
       usedPercent: 97,
       resumeAt: resetAt + 60_000,
@@ -114,7 +113,7 @@ describe("a paused session while the window stays spent", () => {
 
 describe("waking at the reset", () => {
   test("at the reset the lead gets /goal resume, then one wake prompt with the exact text, and the gate is open", async () => {
-    const s = world();
+    const { file, ...s } = world();
     await dutyTick(s.d);
     await dutyTick(s.d);
     s.w.clock = resetAt + 30_000;
@@ -124,8 +123,14 @@ describe("waking at the reset", () => {
     s.w.clock = resetAt + 60_000;
     const events = await dutyTick(s.d);
     expect(events).toContainEqual({ pane: LEAD, action: "resumed" });
-    expect(received(s).slice(0, 4)).toEqual([COMPACT_COMMAND, PAUSE_COMMAND, RESUME_COMMAND, WAKE]);
-    expect(received(s)[3]).toBe(WAKE);
+    expect(received(s).slice(0, 3)).toEqual([COMPACT_COMMAND, PAUSE_COMMAND, RESUME_COMMAND]);
+    expect(received(s)[3]).toStartWith("Your Opus limit has reset. Re-read your previous session transcript ");
+    expect(
+      received(s)[3]!.endsWith(
+        ", your work folder /work/lead and the DAG harvest files, recover context, then continue - do not restart.",
+      ),
+    ).toBe(true);
+    expect(received(s)[3]).toBe(wakeFor(file));
     expect(gate(s)).toEqual([]);
     await dutyTick(s.d);
     expect(received(s)).toHaveLength(5);
@@ -133,16 +138,11 @@ describe("waking at the reset", () => {
 
   test("the wake names the lane's transcript when one is on disk, and resets its nudge clock", async () => {
     const s = world();
-    const sessions = `${s.d.store.root}/sessions`;
-    const laneDir = `${sessions}/--work-lead--`;
-    const file = `${laneDir}/2026-01-01T00-00-00-000Z_aaa.jsonl`;
-    mkdirSync(laneDir, { recursive: true });
-    writeFileSync(file, "{}");
-    s.w.sessionRoots = [sessions];
+    const file = sessionFile(s.w.sessionRoots[0]!, "/work/lead", ["claude-opus-4-7"], "2026-02-01T00-00-00-000Z_bbb");
     await dutyTick(s.d);
     await dutyTick(s.d);
     expect(gate(s)[0]!.transcript).toBe(file);
-    s.w.limits = undefined;
+    s.w.limits = spent(0);
     s.w.clock = resetAt + 60_000;
     await dutyTick(s.d);
     expect(received(s)[2]).toBe(RESUME_COMMAND);

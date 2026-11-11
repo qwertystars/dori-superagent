@@ -1,56 +1,50 @@
 import type { Deps } from "./harness.ts";
-import { type Due, type GateConfig, resetDue, trippedWindow } from "./limit-windows.ts";
-import { detectProviderFailure } from "./provider-failure.ts";
+import { type Due, type GateConfig, type LimitWindow, resetDue, trippedWindow } from "./limit-windows.ts";
 import { refText } from "./refs.ts";
+import type { SessionRef } from "./runtime/types.ts";
 import { laneTranscript } from "./session-transcript.ts";
-import type { GateEntry } from "./store-types.ts";
+import { isOpus, sessionModel } from "./session-model.ts";
+import type { GateEntry, Lane } from "./store-types.ts";
 
-/** Pane text that pauses a lane: omo's own limit verdict, and only while an account window is at the limit too. */
-const LANE_LIMITS: ReadonlySet<string> = new Set(["usage limit", "quota exceeded"]);
+type Managed = { readonly target: string; readonly ref: SessionRef; readonly cwd: string; readonly transcript: string };
 
-/** What a pause names: the session's cwd and its newest transcript under it, else placeholders that still read as words. */
-function contextOf(d: Deps, cwd: string | undefined): { cwd: string; transcript: string } {
-  return cwd === undefined || cwd === ""
-    ? { cwd: "(unknown cwd)", transcript: "(no transcript found)" }
-    : { cwd, transcript: laneTranscript({ cwd }, d.sessionRoots) };
-}
+const laneContext = (d: Deps, lane: Lane): Managed => ({
+  target: lane.key,
+  ref: lane.sessionRef,
+  cwd: lane.cwd,
+  transcript: laneTranscript(lane, d.sessionRoots),
+});
 
-function newEntry(
-  d: Deps,
-  target: string,
-  ref: string,
-  source: GateEntry["source"],
-  windowId: string,
-  usedPercent: number | undefined,
-  cwd: string | undefined,
-  due: Due,
-): GateEntry {
+const pendingLane = (lane: Lane): boolean =>
+  lane.status === "working" || lane.status === "waiting" || lane.migration === true;
+
+function newEntry(d: Deps, session: Managed, model: string, window: LimitWindow, due: Due): GateEntry {
   const now = d.now();
-  const where = contextOf(d, cwd);
   return {
-    target,
-    ref,
+    target: session.target,
+    ref: refText(session.ref),
     phase: "paused-for-limit",
     closedAt: now,
     at: now,
     resumeAt: due.resumeAt,
-    source,
-    windowId,
-    ...(usedPercent === undefined ? {} : { usedPercent }),
+    windowId: window.id,
+    usedPercent: window.usedPercent,
+    model,
     probe: due.probe ? 1 : 0,
     next: "compact",
-    cwd: where.cwd,
-    transcript: where.transcript,
+    cwd: session.cwd,
+    transcript: session.transcript,
     log: [
-      { at: now, kind: "pause", text: `${windowId}${usedPercent === undefined ? "" : ` ${usedPercent}%`} in ${ref}` },
+      { at: now, kind: "pause", text: `${window.id} ${window.usedPercent}% on ${model} in ${refText(session.ref)}` },
     ],
   };
 }
 
 /**
- * The lead (the Opus session) is paused on the account window alone. A lane is paused only when that window is at the
- * limit AND its own screen shows the limit: a lane on another provider shows a text that cannot name which window it
- * hit, and that case stays with the provider recovery, which restarts rather than pauses.
+ * Every Opus session dori manages, gated on the account window: the lead, plus each lane still being worked whose own
+ * session file names an Opus model. The windows are per Claude account, so one trip gates all of them at the same
+ * reset; a lane whose newest row names another provider (a DeepSeek DAG lane) is never gated, and a session whose model
+ * cannot be read is unknown, which pauses nothing (the pane-text recovery then handles its own limit).
  */
 export async function findTrips(d: Deps, gaps: GateConfig, gated: ReadonlySet<string>): Promise<GateEntry[]> {
   const hit = trippedWindow(d.limits(), gaps.percent, d.now());
@@ -63,21 +57,20 @@ export async function findTrips(d: Deps, gaps: GateConfig, gated: ReadonlySet<st
       .for(lead)
       .probe(lead)
       .catch(() => undefined);
-    found.push(
-      newEntry(d, "lead", refText(lead), "usage-cache", hit.window.id, hit.window.usedPercent, probe?.cwd, due),
-    );
+    const cwd = probe?.cwd;
+    const session: Managed =
+      cwd === undefined || cwd === ""
+        ? { target: "lead", ref: lead, cwd: "(unknown cwd)", transcript: "(no transcript found)" }
+        : { target: "lead", ref: lead, cwd, transcript: laneTranscript({ cwd }, d.sessionRoots) };
+    const model = sessionModel(session.transcript);
+    if (isOpus(model)) found.push(newEntry(d, session, model, hit.window, due));
   }
   for (const lane of d.store.lanes()) {
-    if (lane.status === "done" || lane.status === "lost" || gated.has(refText(lane.sessionRef))) continue;
-    const screen = await d.runtimes
-      .for(lane.sessionRef)
-      .read(lane.sessionRef, 30)
-      .catch(() => undefined);
-    const failure = screen === undefined ? null : detectProviderFailure(screen);
-    if (failure === null || !LANE_LIMITS.has(failure.kind)) continue;
-    found.push(
-      newEntry(d, lane.key, refText(lane.sessionRef), "pane", `pane:${failure.kind}`, undefined, lane.cwd, due),
-    );
+    if (!pendingLane(lane) || gated.has(refText(lane.sessionRef))) continue;
+    const session = laneContext(d, lane);
+    const model = sessionModel(session.transcript);
+    if (!isOpus(model)) continue;
+    found.push(newEntry(d, session, model, hit.window, due));
   }
   return found;
 }

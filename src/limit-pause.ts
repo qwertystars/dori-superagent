@@ -23,10 +23,10 @@ function report(d: Deps, text: string): void {
 }
 
 const pauseReport = (entry: GateEntry): string =>
-  `[PAUSE ${entry.target}] Opus limit: ${entry.windowId}${entry.usedPercent === undefined ? "" : ` at ${entry.usedPercent}%`}; ${COMPACT_COMMAND} and ${PAUSE_COMMAND} sent to ${entry.ref}. No prompt or nudge goes to it until ${iso(entry.resumeAt)}.`;
+  `[PAUSE ${entry.target}] Opus limit (${entry.model}): ${entry.windowId}${entry.usedPercent === undefined ? "" : ` at ${entry.usedPercent}%`}; ${COMPACT_COMMAND} and ${PAUSE_COMMAND} sent to ${entry.ref}. No prompt or nudge goes to it until ${iso(entry.resumeAt)}.`;
 
 const resumeReport = (entry: GateEntry): string =>
-  `[RESUME ${entry.target}] Opus limit reset in ${entry.ref}: ${RESUME_COMMAND} sent, then one wake prompt naming ${entry.transcript}.`;
+  `[RESUME ${entry.target}] Opus limit reset (${entry.model}) in ${entry.ref}: ${RESUME_COMMAND} sent, then one wake prompt naming ${entry.transcript}.`;
 
 /** The lane's nudge clock restarts at the wake, so its first nudge is 10 minutes after the wake, not before it. */
 function resetNudgeClock(d: Deps, entry: GateEntry): void {
