@@ -8,6 +8,7 @@ import { HcRuntime } from "./runtime/hc/index.ts";
 import { HerdrRuntime } from "./runtime/herdr/index.ts";
 import { Runtimes } from "./runtime/registry.ts";
 import { type RuntimeChoice, readRuntimeChoice } from "./runtime/select.ts";
+import { defaultSessionRoots } from "./session-transcript.ts";
 import { Store } from "./store.ts";
 import { type HostLoad, KEY_RE, type Role, reservedKey } from "./store-types.ts";
 import { Telemetry, type Usage } from "./telemetry.ts";
@@ -27,6 +28,9 @@ export type Deps = {
   readonly now: () => number;
   readonly agentCmd: string;
   readonly doriCmd: string;
+  /** Where omo keeps session files (`~/.omo/agent/sessions`, `~/.omo/deepseek/agent/sessions`): recovery names a transcript from it. */
+  readonly sessionRoots: readonly string[];
+  readonly sleep: (ms: number) => Promise<void>;
   readonly host: () => HostLoad;
   readonly usage: Usage;
 };
@@ -53,6 +57,8 @@ export const defaultDeps = (): Deps => {
     now: Date.now,
     agentCmd: process.env["DORI_AGENT_CMD"] ?? "omo",
     doriCmd: process.env["DORI_CMD"] ?? `DORI_HOME=${shq(store.root)} bun ${shq(CLI)}`,
+    sessionRoots: defaultSessionRoots(),
+    sleep: (ms: number) => Bun.sleep(ms),
     host: () => ({ load1: loadavg()[0] ?? 0, cores: cpus().length, memFreePct: memFreePct() }),
     usage: new Telemetry(store.root),
   };

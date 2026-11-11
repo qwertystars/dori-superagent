@@ -40,6 +40,10 @@ export class World {
   promptFails = new Map<string, string>();
   /** pane id -> called with the 1-based count of `pane get` calls for that pane, before it answers */
   getHook = new Map<string, (n: number) => void>();
+  /** pane id -> called with the text of every `agent prompt` that pane accepts */
+  promptHook = new Map<string, (text: string) => void>();
+  /** Session roots the recovery kickoff searches for the lane's transcript. */
+  sessionRoots: string[] = [];
   private gets = new Map<string, number>();
   /** `pane process-info` fails (exit 1) for every pane */
   processInfoFails = false;
@@ -155,7 +159,9 @@ export class World {
     if (group === "agent" && verb === "prompt") {
       const fail = this.promptFails.get(id!);
       if (fail) return { code: 1, stdout: "", stderr: fail };
-      pane.received.push(String(argv[3]));
+      const text = String(argv[3]);
+      this.promptHook.get(id!)?.(text);
+      pane.received.push(text);
       return ok({});
     }
     if (group === "pane" && verb === "close") {
@@ -179,6 +185,8 @@ export class World {
       now: () => this.clock,
       agentCmd: "omo",
       doriCmd: "dori",
+      sessionRoots: this.sessionRoots,
+      sleep: async () => {},
       host: () => this.host,
       usage: this.recorder,
     };

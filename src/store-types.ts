@@ -7,6 +7,9 @@ export type LaneStatus = "working" | "waiting" | "ready" | "done" | "lost";
  * beside it (the ref's id and container) so an older binary still reads the file. `migratedFrom`: the sessions it ran in
  * before a `dori migrate`. `migration`: a handover is in progress, and the duty loop leaves the record alone.
  * `sessionPath`: the agent's own session file, when its command records one; `dori migrate --resume` needs it.
+ * `recovery`: a provider failure the duty loop saw on the pane, with the screen hash that proves it is not progressing
+ * and the attempt ladder (`nextRetryAt`) before the next restart. Cleared when the pane stops showing the failure.
+ * `escalatedAt` marks a lane the restarts could not clear: the lead was told once and the lane is left alone.
  */
 export type Lane = {
   key: string;
@@ -23,7 +26,19 @@ export type Lane = {
   lastActivityAt: number;
   nudges: number;
   final?: { text: string; evidence: string[]; at: number };
-  log: { at: number; kind: "start" | "report" | "ready" | "nudge" | "done" | "lost"; text: string }[];
+  recovery?: LaneRecovery;
+  log: { at: number; kind: "start" | "report" | "ready" | "nudge" | "done" | "lost" | "recover"; text: string }[];
+};
+
+export type LaneRecovery = {
+  attempts: number;
+  nextRetryAt?: number;
+  screenHash: string;
+  kind: string;
+  match: string;
+  at: number;
+  /** Set when the attempt cap was reached on an unchanged failing screen: the lead was told once, and no restart follows. */
+  escalatedAt?: number;
 };
 
 /** The sessions `dori up` opens; roles.json maps each to a ref string (a bare herdr pane id, or `hc:t7`). */

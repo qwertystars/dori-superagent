@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { main } from "../src/cli.ts";
 import { dutyTick } from "../src/duty.ts";
 import { send } from "../src/inbox.ts";
 import { report, startLane } from "../src/lanes.ts";
@@ -70,6 +71,22 @@ describe("pane messaging", () => {
     w.promptFails.set("w1:p7", '{"error":{"code":"agent_not_ready"}}');
     expect(await d.runtimes.for(href("w1:p7")).deliver(href("w1:p7"), "rm -rf nothing")).toEqual({ kind: "no-agent" });
     expect(shell.received).toEqual([]);
+  });
+
+  test("an empty or blank --text is refused by send, report and ready; nothing is queued or typed", async () => {
+    const { d, lead, brief } = setup();
+    await startLane(d, "a-lane", brief, { group: "w1" });
+    lead.received.length = 0;
+    for (const argv of [
+      ["send", "lead", "--text", ""],
+      ["send", "lead", "--text", "  \n "],
+      ["report", "a-lane", "--text", ""],
+      ["ready", "a-lane", "--text", " ", "--evidence", "https://example.com/pr/1"],
+    ]) {
+      await expect(main(argv, d)).rejects.toThrow("the message is empty");
+    }
+    expect(lead.received).toEqual([]);
+    expect(d.store.queued(lead1)).toEqual([]);
   });
 
   test("unknown targets are refused instead of guessed", async () => {

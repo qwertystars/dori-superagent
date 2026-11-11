@@ -46,6 +46,11 @@ function deliveryOutcome(result: SendResult | undefined, target: string): number
 
 export async function main(argv: readonly string[], d: Deps = defaultDeps()): Promise<number> {
   const a = parse(argv);
+  // --help is a boolean flag, so the word after it is the command: print the usage instead of running it.
+  if (a.flags.has("help")) {
+    console.log(USAGE);
+    return 0;
+  }
   const [cmd, x] = a.pos;
   if (cmd !== undefined && COMMANDS.has(cmd)) d.usage.touch();
   switch (cmd) {
@@ -137,7 +142,7 @@ export async function main(argv: readonly string[], d: Deps = defaultDeps()): Pr
       return 0;
     default:
       console.log(USAGE);
-      return cmd === undefined || cmd === "help" || cmd === "--help" ? 0 : 64;
+      return cmd === undefined || cmd === "help" ? 0 : 64;
   }
 }
 
