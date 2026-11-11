@@ -14,6 +14,8 @@ export const USAGE = `dori - a proactive multi-session harness on herdr or hc + 
   dori inbox resend <pane|role|key> <index>   release a held entry: the next flush delivers it
   dori duty [--once] [--interval SECONDS]     flush inboxes, nudge idle lanes, escalate, detect lost lanes
   dori duty stop [--text WHY] | resume | status   kill switch
+  dori gate status                            the Claude-limit pauses: window, until when, or GATE open
+  dori gate check | resume [target] [--text WHY] one gate pass / drop a pause by hand
   dori loop [--once] [--interval S] [--max-lanes N] [--max-starts N] [--max-load L] [--force]
                                               hourly: sync backlog, audit missed work, start the next item, ask decisions
   dori loop stop [--text WHY] | resume | status   kill switch and last run

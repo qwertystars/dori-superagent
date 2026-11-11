@@ -73,12 +73,19 @@ export function status(d: Deps): void {
   console.log(runtimeLine(d));
   const roles = d.store.roles();
   const show = (ref: SessionRef | undefined) => (ref ? refText(ref) : "-");
-  console.log(`lead=${show(roles.lead)} duty=${show(roles.duty)} home=${d.store.root}`);
+  const pauses = new Map(d.store.gate().map((e) => [e.ref, e]));
+  const gate = (ref: SessionRef): string => {
+    const entry = pauses.get(refText(ref));
+    return entry ? ` gate=${entry.phase} until ${new Date(entry.resumeAt).toISOString()}` : "";
+  };
+  console.log(
+    `lead=${show(roles.lead)} duty=${show(roles.duty)} home=${d.store.root}${roles.lead ? gate(roles.lead) : ""}`,
+  );
   for (const l of d.store.lanes()) {
     const last = l.log.at(-1);
     const age = Math.round((d.now() - l.lastActivityAt) / 60_000);
     console.log(
-      `${l.key.padEnd(24)} ${l.status.padEnd(8)} ${l.sessionRef.runtime.padEnd(5)} ${refText(l.sessionRef).padEnd(14)} active ${age}m ago  ${last ? `${last.kind}: ${last.text.slice(0, 60)}` : ""}`,
+      `${l.key.padEnd(24)} ${l.status.padEnd(8)} ${l.sessionRef.runtime.padEnd(5)} ${refText(l.sessionRef).padEnd(14)} active ${age}m ago  ${last ? `${last.kind}: ${last.text.slice(0, 60)}` : ""}${gate(l.sessionRef)}`,
     );
   }
 }

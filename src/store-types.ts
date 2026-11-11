@@ -94,6 +94,32 @@ export type Item = {
 
 export type HostLoad = { load1: number; cores: number; memFreePct: number };
 
+/** The command a paused session still owes: `compact` and `pause` open it, `resume` and `wake` close it. Absent once paused. */
+export type GateNext = "compact" | "pause" | "resume" | "wake";
+
+/**
+ * One session paused because a Claude limit window is spent. `ref` is its refText, `target` the lead or a lane key;
+ * `resumeAt` is the reset plus slack, or the next probe's time while no reset is known. `held` records a command that
+ * may sit in the pane's input: the entry never types that command again, since a second copy would run it twice.
+ */
+export type GateEntry = {
+  target: string;
+  ref: string;
+  phase: "paused-for-limit" | "resuming";
+  closedAt: number;
+  at: number;
+  resumeAt: number;
+  source: "usage-cache" | "pane";
+  windowId: string;
+  usedPercent?: number;
+  probe: number;
+  next?: GateNext;
+  held?: string;
+  cwd: string;
+  transcript: string;
+  log: { at: number; kind: "pause" | "probe" | "resume" | "held"; text: string }[];
+};
+
 export type LoopRun = {
   at: number;
   skipped?: string;

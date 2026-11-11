@@ -3,6 +3,7 @@ import { recoverLane } from "./duty-recover.ts";
 import { type Deps, prompt } from "./harness.ts";
 import { runHook } from "./hooks.ts";
 import { flushInbox, sendOrThrow, tellLead } from "./inbox.ts";
+import { gatedRefs, pauseTick } from "./limit-pause.ts";
 import { Refusal } from "./refusal.ts";
 import { refText } from "./refs.ts";
 import type { Lane } from "./store-types.ts";
@@ -15,14 +16,29 @@ export type DutyEvent = { lane?: string; pane?: string; action: string; detail?:
 const watched = (lane: Lane): boolean =>
   (lane.status === "working" || lane.status === "waiting") && lane.migration !== true;
 
-/** One proactive pass: flush inboxes of panes that became idle, nudge silent lanes, escalate, detect lost panes. */
+/** One proactive pass: advance the Claude-limit pauses, flush inboxes of panes that became idle, nudge silent lanes,
+ * escalate, detect lost panes. A paused session gets none of the latter: queued messages wait, nothing is nudged into it.
+ */
 export async function dutyTick(d: Deps): Promise<DutyEvent[]> {
   // Kill switch: a stopped duty loop delivers, nudges and escalates nothing. Queued messages wait for the resume.
   const stop = d.store.stop("duty");
   if (stop) return [{ action: "stopped", detail: stop.reason }];
   const events: DutyEvent[] = [];
+  // First, so a pause opened in this pass already suppresses the flushes and nudges below. A session paused when the
+  // pass started stays held for it even if the pass wakes it, so the wake prompt is the only text that pane gets now.
+  const heldAtStart = gatedRefs(d.store.gate());
+  await pauseTick(d, events);
+  const gated = new Set([...heldAtStart, ...gatedRefs(d.store.gate())]);
   for (const ref of d.store.inboxPanes()) {
     const paneId = refText(ref);
+    if (gated.has(paneId)) {
+      events.push({
+        pane: paneId,
+        action: "pause-held",
+        detail: `${d.store.queued(ref).length} message(s) wait for the reset`,
+      });
+      continue;
+    }
     try {
       const result = await flushInbox(d, ref);
       // flushInbox follows a `.forward` marker; the counts are read where the entries live now.
@@ -48,7 +64,7 @@ export async function dutyTick(d: Deps): Promise<DutyEvent[]> {
     }
   }
   for (const listed of d.store.lanes()) {
-    if (!watched(listed)) continue;
+    if (!watched(listed) || gated.has(refText(listed.sessionRef))) continue;
     try {
       const { status: st } = await d.runtimes.for(listed.sessionRef).probe(listed.sessionRef);
       // Re-read right before deciding and saving: a report, a READY or a migration may have landed during the probe.

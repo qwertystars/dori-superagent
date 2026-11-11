@@ -3,6 +3,13 @@ import { cpus, loadavg } from "node:os";
 import { join, resolve } from "node:path";
 import { shq } from "./delivery.ts";
 import { memFreePct } from "./host.ts";
+import {
+  type GateConfig,
+  type LimitsReading,
+  readGateConfig,
+  readUsageCache,
+  usageCachePath,
+} from "./limit-windows.ts";
 import { type Exec, spawnExec } from "./runtime/exec.ts";
 import { HcRuntime } from "./runtime/hc/index.ts";
 import { HerdrRuntime } from "./runtime/herdr/index.ts";
@@ -33,6 +40,10 @@ export type Deps = {
   readonly sleep: (ms: number) => Promise<void>;
   readonly host: () => HostLoad;
   readonly usage: Usage;
+  /** The Claude limit windows omo's machine-wide cache holds, or undefined when it is unreadable: unknown pauses nothing. */
+  readonly limits: () => LimitsReading | undefined;
+  /** The percentage and slack a pause is decided with. */
+  readonly gateConfig: () => GateConfig;
 };
 
 /** The runtime is chosen on first use, so commands that open or reach no session work without one installed. */
@@ -61,6 +72,8 @@ export const defaultDeps = (): Deps => {
     sleep: (ms: number) => Bun.sleep(ms),
     host: () => ({ load1: loadavg()[0] ?? 0, cores: cpus().length, memFreePct: memFreePct() }),
     usage: new Telemetry(store.root),
+    limits: () => readUsageCache(usageCachePath(process.env)),
+    gateConfig: () => readGateConfig(process.env),
   };
 };
 
