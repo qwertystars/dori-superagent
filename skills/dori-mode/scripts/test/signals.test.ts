@@ -14,6 +14,9 @@ import { depsFor, fakeClock, newWorld, withState } from "./fakes.ts";
 const state = withState();
 afterAll(() => state.done());
 const io = { cwd: state.dir, home: "/nonexistent-home" };
+/** Real commands for the Done signals, but the temp dir is never a git checkout: an enclosing repo must not decide this. */
+const cliRun: typeof run = async (argv, opts) =>
+  argv[0] === "git" && argv.includes("--is-inside-work-tree") ? { code: 0, out: "false", err: "" } : run(argv, opts);
 
 test("a command signal passes on exit 0 and runs the argv directly, so shell syntax stays literal", async () => {
   const ok = await checkSignal('command ["sh","-c","exit 0"]', run, io);
@@ -124,7 +127,7 @@ test("a QA-only lane's claim is re-checked at close time: the lane says done, bu
   const world = newWorld();
   const clock = fakeClock(Date.parse("2026-01-01T00:00:00Z"));
   const flag = join(state.dir, "qa-passed");
-  const deps = { ...depsFor(world, clock, state.dir), run, signalIo: { cwd: state.dir } };
+  const deps = { ...depsFor(world, clock, state.dir), run: cliRun, signalIo: { cwd: state.dir } };
   const lane = await adoptLane(deps, {
     key: "local-setup",
     title: "setup",
