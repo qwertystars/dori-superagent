@@ -28,12 +28,14 @@ const isOpen = (l: Lane): boolean => l.status !== "done" && l.status !== "lost";
 function laneSubject(d: Deps, key: string): Subject {
   const lane = d.store.lane(key);
   if (!lane || !isOpen(lane)) throw new Refusal(`no open lane ${key}`);
+  if (lane.hub === true) throw new Refusal(`lane ${key} runs under the hub: migrate is for sessions dori opened`);
+  const from = lane.sessionRef;
   const kickoff = (brief: string) => `Read your brief at ${brief} and execute it. Your lane key is ${key}.`;
   const save = (change: (l: Lane) => Lane): void => d.store.saveLane(change(d.store.lane(key) as Lane));
   return {
     name: key,
     kind: "lane",
-    from: lane.sessionRef,
+    from,
     cwd: lane.cwd,
     brief: () => readFileSync(lane.brief, "utf8"),
     footer: prompt("lane-footer.md", { key, dori: d.doriCmd }),

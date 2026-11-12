@@ -143,11 +143,13 @@ export async function watchProviderFailure(
  * reason it is not.
  */
 async function restartLane(d: Deps, lane: Lane, kickoff: string): Promise<string | undefined> {
-  const rt = d.runtimes.for(lane.sessionRef);
-  const stop = await stopAgent(d, lane.sessionRef);
+  if (lane.hub === true) return "the lane runs under the hub";
+  const ref = lane.sessionRef;
+  const rt = d.runtimes.for(ref);
+  const stop = await stopAgent(d, ref);
   if (stop !== "shell") return stop === "gone" ? "the pane is gone" : "the agent did not exit";
   try {
-    await rt.start(lane.sessionRef, composeLaneCommand(d.agentCmd, lane.model ?? UNPINNED_MODEL, shq(kickoff)));
+    await rt.start(ref, composeLaneCommand(d.agentCmd, lane.model ?? UNPINNED_MODEL, shq(kickoff)));
     return undefined;
   } catch (e) {
     return `start failed: ${failureDetail(e)}`;

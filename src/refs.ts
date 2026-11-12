@@ -10,3 +10,10 @@ export const refText = (ref: SessionRef): string => (ref.runtime === "herdr" ? r
 export const refFromText = (text: string): SessionRef => parseRef(text) ?? { runtime: "herdr", id: text };
 
 export const sameSession = (a: SessionRef, b: SessionRef): boolean => a.runtime === b.runtime && a.id === b.id;
+
+/** A lane as text: `hub:<key>` for a hub lane, which has no session of its own, else its session ref. */
+export const laneRefText = (lane: {
+  readonly key: string;
+  readonly hub?: true;
+  readonly sessionRef: SessionRef;
+}): string => (lane.hub === true ? `hub:${lane.key}` : refText(lane.sessionRef));

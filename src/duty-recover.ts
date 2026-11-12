@@ -36,9 +36,11 @@ export async function recoverLane(
   events: DutyEvent[],
 ): Promise<boolean> {
   if (!STALLED.has(st)) return false;
+  if (lane.hub === true) return false;
+  const ref = lane.sessionRef;
   const screen = await d.runtimes
-    .for(lane.sessionRef)
-    .read(lane.sessionRef, WATCH_LINES)
+    .for(ref)
+    .read(ref, WATCH_LINES)
     .catch(() => undefined);
   if (!stalledScreen(lane, screen)) return false;
   const outcome = await watchProviderFailure(d, lane, now, screen);
@@ -46,7 +48,7 @@ export async function recoverLane(
     const when = new Date(outcome.next).toISOString();
     const report =
       outcome.kind === "recovered"
-        ? `[RECOVER ${lane.key}] interrupted by ${outcome.failure.match} (${outcome.failure.kind}); the agent was restarted in ${refText(lane.sessionRef)} with a kickoff naming ${laneTranscript(lane, d.sessionRoots)}. Attempt ${outcome.attempt}, next retry at ${when} if it fails again.`
+        ? `[RECOVER ${lane.key}] interrupted by ${outcome.failure.match} (${outcome.failure.kind}); the agent was restarted in ${refText(ref)} with a kickoff naming ${laneTranscript(lane, d.sessionRoots)}. Attempt ${outcome.attempt}, next retry at ${when} if it fails again.`
         : `[RECOVER ${lane.key}] interrupted by ${outcome.failure.match} (${outcome.failure.kind}); the restart failed (${outcome.reason}). Attempt ${outcome.attempt}, next retry at ${when}.`;
     await tellLead(d, report, "duty");
     events.push({

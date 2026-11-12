@@ -22,7 +22,10 @@ export function resolveTarget(d: Deps, target: string): SessionRef {
     return ref;
   }
   const lane = d.store.lane(target);
-  if (lane && lane.status !== "done") return lane.sessionRef;
+  if (lane && lane.status !== "done") {
+    if (lane.hub === true) throw new Refusal(`lane ${target} runs under the hub: dori has no session to send into`);
+    return lane.sessionRef;
+  }
   const bare = parseRef(target);
   if (bare) return bare;
   throw new Refusal(`unknown target ${target}: not a session ref, role or open lane`);

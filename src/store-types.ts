@@ -4,7 +4,9 @@ export type LaneStatus = "working" | "waiting" | "ready" | "done" | "lost";
 
 /**
  * One lane record. `sessionRef` is the session it runs in, on whichever runtime opened it; `paneId`/`tabId` are written
- * beside it (the ref's id and container) so an older binary still reads the file. `migratedFrom`: the sessions it ran in
+ * beside it (the ref's id and container) so an older binary still reads the file. `hub` marks a lane started through
+ * the hub (`DORI_HUB_BIN`), which owns the session: its `sessionRef` carries the lane key as a placeholder with no
+ * runtime session behind it, and `hubStatus` is the status the hub answered with. `migratedFrom`: the sessions it ran in
  * before a `dori migrate`. `migration`: a handover is in progress, and the duty loop leaves the record alone.
  * `sessionPath`: the agent's own session file, when its command records one; `dori migrate --resume` needs it.
  * `model`: the pin this lane was started with — `provider/model`, or the literal `unpinned` — so a restart or a
@@ -16,6 +18,8 @@ export type LaneStatus = "working" | "waiting" | "ready" | "done" | "lost";
 export type Lane = {
   key: string;
   sessionRef: SessionRef;
+  hub?: true;
+  hubStatus?: string;
   migratedFrom?: SessionRef[];
   migration?: true;
   sessionPath?: string;

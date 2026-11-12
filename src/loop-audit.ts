@@ -18,15 +18,17 @@ export async function audit(d: Deps, run: LoopRun): Promise<void> {
   const now = d.now();
   for (const lane of d.store.lanes()) {
     if (lane.status !== "working" && lane.status !== "waiting" && lane.status !== "ready") continue;
+    if (lane.hub === true) continue;
+    const ref = lane.sessionRef;
     let st: AgentStatus;
     try {
-      st = (await d.runtimes.for(lane.sessionRef).probe(lane.sessionRef)).status;
+      st = (await d.runtimes.for(ref).probe(ref)).status;
     } catch (e) {
-      run.findings.push(`${lane.sessionRef.runtime}: ${lane.key}: ${e instanceof Error ? e.message : String(e)}`);
+      run.findings.push(`${ref.runtime}: ${lane.key}: ${e instanceof Error ? e.message : String(e)}`);
       continue;
     }
     if (st === "gone") {
-      run.findings.push(`${lane.key} pane ${refText(lane.sessionRef)} is gone`);
+      run.findings.push(`${lane.key} pane ${refText(ref)} is gone`);
     } else if (lane.status === "ready") {
       const age = now - (lane.final?.at ?? lane.lastActivityAt);
       if (age >= READY_HOURS * HOUR)

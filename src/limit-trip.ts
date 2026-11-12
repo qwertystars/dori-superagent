@@ -16,7 +16,7 @@ const laneContext = (d: Deps, lane: Lane): Managed => ({
 });
 
 const pendingLane = (lane: Lane): boolean =>
-  lane.status === "working" || lane.status === "waiting" || lane.migration === true;
+  lane.hub !== true && (lane.status === "working" || lane.status === "waiting" || lane.migration === true);
 
 function newEntry(d: Deps, session: Managed, model: string, window: LimitWindow, due: Due): GateEntry {
   const now = d.now();

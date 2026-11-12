@@ -3,13 +3,13 @@ import { pauseTick } from "./limit-pause.ts";
 import type { DutyEvent } from "./duty.ts";
 import type { Deps } from "./harness.ts";
 import { Refusal } from "./refusal.ts";
-import { refText } from "./refs.ts";
+import { laneRefText, refText } from "./refs.ts";
 
 const iso = (at: number): string => new Date(at).toISOString();
 
 function targetRef(d: Deps, target: string): string | undefined {
   const lane = d.store.lane(target);
-  if (lane !== undefined) return refText(lane.sessionRef);
+  if (lane !== undefined) return laneRefText(lane);
   const lead = d.store.roles().lead;
   return target === "lead" && lead !== undefined ? refText(lead) : undefined;
 }
