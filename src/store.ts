@@ -79,7 +79,7 @@ export class Store {
   }
 
   laneBySession(ref: SessionRef): Lane | undefined {
-    return this.lanes().find((l) => sameSession(l.sessionRef, ref) && l.status !== "done");
+    return this.lanes().find((l) => l.hub !== true && sameSession(l.sessionRef, ref) && l.status !== "done");
   }
 
   /** roles.json holds ref strings (refText), so an older binary still parses it; a bare value is a herdr pane. */

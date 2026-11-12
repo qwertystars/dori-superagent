@@ -8,7 +8,7 @@ import { startLane } from "./lanes.ts";
 import { audit, HOUR } from "./loop-audit.ts";
 import { mismatchTags } from "./model-receipt.ts";
 import { acquire, holds, release } from "./loop-lock.ts";
-import { refText } from "./refs.ts";
+import { laneRefText } from "./refs.ts";
 import type { LoopRun } from "./store-types.ts";
 
 export { HOUR };
@@ -115,7 +115,7 @@ async function pull(
         run.findings.push(`start ${item.id} failed: ${why}`);
         continue;
       }
-      run.findings.push(`${item.id} started in ${refText(lane.sessionRef)} but the lead was not told: ${why}`);
+      run.findings.push(`${item.id} started in ${laneRefText(lane)} but the lead was not told: ${why}`);
     }
     item.status = "running";
     log(d, item, "start", "lane opened by the hourly loop");

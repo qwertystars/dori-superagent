@@ -80,7 +80,8 @@ export async function main(argv: readonly string[], d: Deps = defaultDeps()): Pr
         ...(workspace !== undefined ? { group: workspace } : {}),
         ...(model !== undefined ? { model } : {}),
       });
-      console.log(`STARTED ${lane.key} pane=${refText(lane.sessionRef)} brief=${lane.brief}`);
+      const where = lane.hub === true ? `hub=${lane.hubStatus ?? "started"}` : `pane=${refText(lane.sessionRef)}`;
+      console.log(`STARTED ${lane.key} ${where} brief=${lane.brief}`);
       return 0;
     }
     case "report": {

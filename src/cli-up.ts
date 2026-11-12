@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { shq } from "./delivery.ts";
 import { promptsDir, type Deps } from "./harness.ts";
-import { refText } from "./refs.ts";
+import { laneRefText, refText } from "./refs.ts";
 import { groupId } from "./runtime/group.ts";
 import { openSession, type SessionRef } from "./runtime/types.ts";
 import { RuntimeChoiceError } from "./runtime/select.ts";
@@ -90,8 +90,10 @@ export function status(d: Deps): void {
     const last = l.log.at(-1);
     const age = Math.round((d.now() - l.lastActivityAt) / 60_000);
     const tag = tags.get(l.key);
+    const ref = l.sessionRef;
+    const runtime = l.hub === true ? "hub" : ref.runtime;
     console.log(
-      `${l.key.padEnd(24)} ${l.status.padEnd(8)} ${l.sessionRef.runtime.padEnd(5)} ${refText(l.sessionRef).padEnd(14)} model=${l.model ?? UNPINNED_MODEL} active ${age}m ago  ${last ? `${last.kind}: ${last.text.slice(0, 60)}` : ""}${gate(l.sessionRef)}${tag ? ` ${tag}` : ""}`,
+      `${l.key.padEnd(24)} ${l.status.padEnd(8)} ${runtime.padEnd(5)} ${laneRefText(l).padEnd(14)} model=${l.model ?? UNPINNED_MODEL} active ${age}m ago  ${last ? `${last.kind}: ${last.text.slice(0, 60)}` : ""}${l.hub === true ? "" : gate(ref)}${tag ? ` ${tag}` : ""}`,
     );
   }
 }

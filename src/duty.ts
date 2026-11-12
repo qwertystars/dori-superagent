@@ -64,12 +64,13 @@ export async function dutyTick(d: Deps): Promise<DutyEvent[]> {
     }
   }
   for (const listed of d.store.lanes()) {
-    if (!watched(listed) || gated.has(refText(listed.sessionRef))) continue;
+    if (listed.hub === true || !watched(listed) || gated.has(refText(listed.sessionRef))) continue;
     try {
       const { status: st } = await d.runtimes.for(listed.sessionRef).probe(listed.sessionRef);
       // Re-read right before deciding and saving: a report, a READY or a migration may have landed during the probe.
       const lane = d.store.lane(listed.key);
-      if (lane === undefined || !watched(lane) || lane.sessionRef.id !== listed.sessionRef.id) continue;
+      if (lane === undefined || lane.hub === true || !watched(lane) || lane.sessionRef.id !== listed.sessionRef.id)
+        continue;
       const now = d.now();
       if (st === "gone") {
         lane.status = "lost";

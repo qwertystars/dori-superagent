@@ -3,13 +3,14 @@ import { resolve } from "node:path";
 import { shq } from "./delivery.ts";
 import { prompt, type Deps } from "./harness.ts";
 import { composeLaneCommand, resolveLaneModel } from "./lane-model.ts";
+import { hubBin, hubStart, laneSpec, writeSpec } from "./hub-launch.ts";
 import { settled, tellLead, type SendResult } from "./inbox.ts";
 import { Refusal } from "./refusal.ts";
 import { runHook } from "./hooks.ts";
-import { refText } from "./refs.ts";
+import { laneRefText, refText } from "./refs.ts";
 import { groupId } from "./runtime/group.ts";
 import { openSession } from "./runtime/types.ts";
-import { KEY_RE, reservedKey, type Lane } from "./store-types.ts";
+import { KEY_RE, reservedKey, UNPINNED_MODEL, type Lane } from "./store-types.ts";
 
 export async function startLane(
   d: Deps,
@@ -22,12 +23,16 @@ export async function startLane(
   if (reserved) throw new Refusal(reserved);
   const existing = d.store.lane(key);
   if (existing && existing.status !== "done" && existing.status !== "lost")
-    throw new Refusal(`lane ${key} is already open in ${refText(existing.sessionRef)}`);
+    throw new Refusal(`lane ${key} is already open in ${laneRefText(existing)}`);
   const model = resolveLaneModel(opts.model, process.env, d.agentCmd);
+  const hub = hubBin(process.env);
+  if (hub !== undefined && model === UNPINNED_MODEL) throw new Refusal("hub launch needs --model");
   const cwd = resolve(opts.cwd ?? process.cwd());
   const briefPath = d.store.briefPath(key);
   const footer = prompt("lane-footer.md", { key, dori: d.doriCmd });
   await Bun.write(briefPath, `${readFileSync(briefFile, "utf8").trimEnd()}\n\n${footer}`);
+
+  if (hub !== undefined) return startThroughHub(d, hub, { key, briefFile, briefPath, cwd, model });
 
   // The group is the caller's own when it runs in a session of the selected runtime (a lane opened from the lead's
   // workspace stays there); otherwise herdr gets a new "dori" workspace and hc this home's group label.
@@ -61,6 +66,41 @@ export async function startLane(
   };
   d.store.saveLane(lane);
   await tellLead(d, `[START ${key}] lane opened in ${refText(ref)}`, key);
+  const open = d.store.lanes().filter((l) => l.status === "working" || l.status === "waiting").length;
+  d.usage.record({ name: "dori.lane_started", open_lanes: Math.min(open, 1000) });
+  return lane;
+}
+
+/** Writes the spec, asks the hub, refuses on anything but ok: a lane the hub started records no session of its own. */
+async function startThroughHub(
+  d: Deps,
+  hub: string,
+  o: { key: string; briefFile: string; briefPath: string; cwd: string; model: string },
+): Promise<Lane> {
+  const specFile = writeSpec(
+    d.store.root,
+    laneSpec({ key: o.key, briefPath: o.briefPath, model: o.model, cwd: o.cwd, agentCmd: d.agentCmd }),
+  );
+  const started = await hubStart(d.exec, hub, specFile);
+  const now = d.now();
+  const lane: Lane = {
+    key: o.key,
+    hub: true,
+    hubStatus: started.status,
+    sessionRef: { runtime: "herdr", id: o.key },
+    paneId: o.key,
+    tabId: "",
+    brief: o.briefPath,
+    cwd: o.cwd,
+    model: o.model,
+    status: "working",
+    createdAt: now,
+    lastActivityAt: now,
+    nudges: 0,
+    log: [{ at: now, kind: "start", text: `${o.briefFile} model=${o.model} hub=${started.status}` }],
+  };
+  d.store.saveLane(lane);
+  await tellLead(d, `[START ${o.key}] lane started through the hub (status ${started.status})`, o.key);
   const open = d.store.lanes().filter((l) => l.status === "working" || l.status === "waiting").length;
   d.usage.record({ name: "dori.lane_started", open_lanes: Math.min(open, 1000) });
   return lane;
@@ -119,11 +159,14 @@ export async function done(d: Deps, key: string): Promise<void> {
   const lane = d.store.lane(key);
   if (!lane) throw new Refusal(`no lane ${key}`);
   if (lane.status !== "ready") throw new Refusal(`lane ${key} is ${lane.status}, not ready: no final answer recorded`);
-  const rt = d.runtimes.for(lane.sessionRef);
-  const { status: st } = await rt.probe(lane.sessionRef);
-  if (st === "working" || st === "blocked" || st === "error")
-    throw new Refusal(`lane ${key} pane is ${st}; let it finish first`);
-  if (st !== "gone") await rt.close(lane.sessionRef);
+  if (lane.hub !== true) {
+    const ref = lane.sessionRef;
+    const rt = d.runtimes.for(ref);
+    const { status: st } = await rt.probe(ref);
+    if (st === "working" || st === "blocked" || st === "error")
+      throw new Refusal(`lane ${key} pane is ${st}; let it finish first`);
+    if (st !== "gone") await rt.close(ref);
+  }
   lane.status = "done";
   lane.log.push({ at: d.now(), kind: "done", text: "closed by lead" });
   d.store.saveLane(lane);
