@@ -1,0 +1,5 @@
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"go"}]}}
+{"type":"message","message":{"role":"assistant","provider":"anthropic-subscription","model":"claude-sonnet-5-5"
+{"type":"message","id":"a-claude-sonnet-5-5-anthropic-subscription","message":{"role":"assistant","provider":"anthropic-subscription","model":"claude-sonnet-5-5","content":[{"type":"text","text":"ok"}]}}
+{not json at all
+{"type":"message","message":{"role":"toolResult","toolName":"bash","content":"tail"}}

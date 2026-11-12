@@ -1,0 +1,2 @@
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"start here"}]}}
+{"type":"custom","customType":"pi.virtual-model-state","data":{"modelId":"anthropic-subscription/claude-sonnet-5-5"}}
