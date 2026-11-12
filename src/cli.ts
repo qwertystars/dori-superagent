@@ -74,9 +74,11 @@ export async function main(argv: readonly string[], d: Deps = defaultDeps()): Pr
     case "start": {
       const cwd = one(a, "cwd");
       const workspace = one(a, "workspace");
+      const model = one(a, "model");
       const lane = await startLane(d, need(x, "lane key"), need(one(a, "brief"), "--brief"), {
         ...(cwd !== undefined ? { cwd } : {}),
         ...(workspace !== undefined ? { group: workspace } : {}),
+        ...(model !== undefined ? { model } : {}),
       });
       console.log(`STARTED ${lane.key} pane=${refText(lane.sessionRef)} brief=${lane.brief}`);
       return 0;

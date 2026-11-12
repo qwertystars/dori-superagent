@@ -7,6 +7,8 @@ export type LaneStatus = "working" | "waiting" | "ready" | "done" | "lost";
  * beside it (the ref's id and container) so an older binary still reads the file. `migratedFrom`: the sessions it ran in
  * before a `dori migrate`. `migration`: a handover is in progress, and the duty loop leaves the record alone.
  * `sessionPath`: the agent's own session file, when its command records one; `dori migrate --resume` needs it.
+ * `model`: the pin this lane was started with — `provider/model`, or the literal `unpinned` — so a restart or a
+ * migration composes the same launch command and `dori status` can show what the lane was asked to run.
  * `recovery`: a provider failure the duty loop saw on the pane, with the screen hash that proves it is not progressing
  * and the attempt ladder (`nextRetryAt`) before the next restart. Cleared when the pane stops showing the failure.
  * `escalatedAt` marks a lane the restarts could not clear: the lead was told once and the lane is left alone.
@@ -17,6 +19,7 @@ export type Lane = {
   migratedFrom?: SessionRef[];
   migration?: true;
   sessionPath?: string;
+  model?: string;
   paneId: string;
   tabId: string;
   brief: string;
@@ -139,6 +142,8 @@ export type LoopRun = {
 };
 
 export const KEEP_RUNS = 168;
+/** The pin a lane carries when nothing named one: it still records the decision, and reads as "no --model" everywhere. */
+export const UNPINNED_MODEL = "unpinned";
 export const KEY_RE = /^[a-z][a-z0-9-]{1,40}$/;
 /** Role names are send targets, and resolveTarget tries roles first, so a lane with one of these keys could never be reached. */
 export const RESERVED_KEYS: readonly Role[] = ["lead", "duty", "duty-loop", "hourly-loop"];
