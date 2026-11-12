@@ -1,0 +1,5 @@
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"ship it"}]}}
+{"type":"message","id":"a-claude-sonnet-5-5-anthropic-subscription","message":{"role":"assistant","provider":"anthropic-subscription","model":"claude-sonnet-5-5","content":[{"type":"text","text":"ok"}]}}
+{"type":"model_change","provider":"anthropic","modelId":"claude-sonnet-5-5","source":"picker"}
+{"type":"message","message":{"role":"toolResult","toolName":"bash","content":"ran the suite"}}
+{"type":"message","id":"a-deepseek-v4.1-flash-eco-opendesign-go","message":{"role":"assistant","provider":"opendesign-go","model":"deepseek-v4.1-flash-eco","content":[{"type":"text","text":"ok"}]}}

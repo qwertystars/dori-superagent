@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { need, one, USAGE, type Args } from "./cli-args.ts";
 import { shq } from "./delivery.ts";
 import { prompt, promptsDir, type Deps } from "./harness.ts";
+import { composeLaneCommand } from "./lane-model.ts";
 import { Refusal } from "./refusal.ts";
 import { askCheckpoint, capture, type MigrateOpts, type Subject } from "./migrate-capture.ts";
 import { swapAgent, swapLoop } from "./migrate-swap.ts";
@@ -16,7 +17,7 @@ import {
   removeJournal,
   writeJournal,
 } from "./store-journal.ts";
-import type { Lane, Role } from "./store-types.ts";
+import { UNPINNED_MODEL, type Lane, type Role } from "./store-types.ts";
 
 export type Target = { readonly lane?: string; readonly role?: Role; readonly all?: boolean };
 
@@ -46,7 +47,7 @@ function laneSubject(d: Deps, key: string): Subject {
       env: { DORI_LANE: key, DORI_HOME: d.store.root },
       ...(group === undefined ? {} : { group }),
     }),
-    command: (brief) => `${d.agentCmd} ${shq(kickoff(brief))}`,
+    command: (brief) => composeLaneCommand(d.agentCmd, lane.model ?? UNPINNED_MODEL, shq(kickoff(brief))),
     setHold: (on) => save(({ migration: _, ...l }) => (on ? { ...l, migration: true } : l)),
     switchTo: (ref) =>
       save((l) => ({ ...l, sessionRef: ref, migratedFrom: [...(l.migratedFrom ?? []), l.sessionRef] })),

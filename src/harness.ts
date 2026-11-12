@@ -15,6 +15,7 @@ import { HcRuntime } from "./runtime/hc/index.ts";
 import { HerdrRuntime } from "./runtime/herdr/index.ts";
 import { Runtimes } from "./runtime/registry.ts";
 import { type RuntimeChoice, readRuntimeChoice } from "./runtime/select.ts";
+import type { BoatExec } from "./model-receipt.ts";
 import { defaultSessionRoots } from "./session-transcript.ts";
 import { Store } from "./store.ts";
 import { type HostLoad, KEY_RE, type Role, reservedKey } from "./store-types.ts";
@@ -44,6 +45,8 @@ export type Deps = {
   readonly limits: () => LimitsReading | undefined;
   /** The percentage and slack a pause is decided with. */
   readonly gateConfig: () => GateConfig;
+  /** How a boat lane's session log is read (`boat exec`); absent means the real boat CLI (see src/model-receipt.ts). */
+  readonly boatExec?: BoatExec;
 };
 
 /** The runtime is chosen on first use, so commands that open or reach no session work without one installed. */

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { shq } from "./delivery.ts";
 import { prompt, type Deps } from "./harness.ts";
+import { composeLaneCommand, resolveLaneModel } from "./lane-model.ts";
 import { settled, tellLead, type SendResult } from "./inbox.ts";
 import { Refusal } from "./refusal.ts";
 import { runHook } from "./hooks.ts";
@@ -14,7 +15,7 @@ export async function startLane(
   d: Deps,
   key: string,
   briefFile: string,
-  opts: { cwd?: string; group?: string } = {},
+  opts: { cwd?: string; group?: string; model?: string } = {},
 ): Promise<Lane> {
   if (!KEY_RE.test(key)) throw new Refusal(`lane key must match ${KEY_RE}`);
   const reserved = reservedKey(key);
@@ -22,6 +23,7 @@ export async function startLane(
   const existing = d.store.lane(key);
   if (existing && existing.status !== "done" && existing.status !== "lost")
     throw new Refusal(`lane ${key} is already open in ${refText(existing.sessionRef)}`);
+  const model = resolveLaneModel(opts.model, process.env, d.agentCmd);
   const cwd = resolve(opts.cwd ?? process.cwd());
   const briefPath = d.store.briefPath(key);
   const footer = prompt("lane-footer.md", { key, dori: d.doriCmd });
@@ -39,13 +41,14 @@ export async function startLane(
   const ref = await openSession(
     rt,
     { name: key, role: "lane", container: "tab", cwd, env: { DORI_LANE: key, DORI_HOME: d.store.root }, group },
-    `${d.agentCmd} ${shq(kickoff)}`,
+    composeLaneCommand(d.agentCmd, model, shq(kickoff)),
   );
 
   const now = d.now();
   const lane: Lane = {
     key,
     sessionRef: ref,
+    model,
     paneId: ref.id,
     tabId: ref.container ?? "",
     brief: briefPath,
@@ -54,7 +57,7 @@ export async function startLane(
     createdAt: now,
     lastActivityAt: now,
     nudges: 0,
-    log: [{ at: now, kind: "start", text: briefFile }],
+    log: [{ at: now, kind: "start", text: `${briefFile} model=${model}` }],
   };
   d.store.saveLane(lane);
   await tellLead(d, `[START ${key}] lane opened in ${refText(ref)}`, key);

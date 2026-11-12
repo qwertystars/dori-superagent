@@ -6,6 +6,8 @@ import { refText } from "./refs.ts";
 import { groupId } from "./runtime/group.ts";
 import { openSession, type SessionRef } from "./runtime/types.ts";
 import { RuntimeChoiceError } from "./runtime/select.ts";
+import { laneReceipts, receiptTag } from "./model-receipt.ts";
+import { UNPINNED_MODEL } from "./store-types.ts";
 
 function renderPrompt(d: Deps, name: string): string {
   const dir = join(d.store.root, "prompts");
@@ -81,11 +83,15 @@ export function status(d: Deps): void {
   console.log(
     `lead=${show(roles.lead)} duty=${show(roles.duty)} home=${d.store.root}${roles.lead ? gate(roles.lead) : ""}`,
   );
-  for (const l of d.store.lanes()) {
+  const lanes = d.store.lanes();
+  // One receipt per live lane, read once: the tag is the proof that the model the lane runs is the model it was pinned to.
+  const tags = new Map(laneReceipts(d, lanes).map((r) => [r.key, receiptTag(r)]));
+  for (const l of lanes) {
     const last = l.log.at(-1);
     const age = Math.round((d.now() - l.lastActivityAt) / 60_000);
+    const tag = tags.get(l.key);
     console.log(
-      `${l.key.padEnd(24)} ${l.status.padEnd(8)} ${l.sessionRef.runtime.padEnd(5)} ${refText(l.sessionRef).padEnd(14)} active ${age}m ago  ${last ? `${last.kind}: ${last.text.slice(0, 60)}` : ""}${gate(l.sessionRef)}`,
+      `${l.key.padEnd(24)} ${l.status.padEnd(8)} ${l.sessionRef.runtime.padEnd(5)} ${refText(l.sessionRef).padEnd(14)} model=${l.model ?? UNPINNED_MODEL} active ${age}m ago  ${last ? `${last.kind}: ${last.text.slice(0, 60)}` : ""}${gate(l.sessionRef)}${tag ? ` ${tag}` : ""}`,
     );
   }
 }

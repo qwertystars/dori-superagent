@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { failureDetail, shq } from "./delivery.ts";
 import type { Deps } from "./harness.ts";
+import { composeLaneCommand } from "./lane-model.ts";
 import { detectProviderFailure, isAuthFailure, type ProviderFailure } from "./provider-failure.ts";
 import type { AgentStatus } from "./runtime/types.ts";
 import { kickoffText, laneTranscript } from "./session-transcript.ts";
-import type { Lane } from "./store-types.ts";
+import { UNPINNED_MODEL, type Lane } from "./store-types.ts";
 
 /** The retry delays after a recovery, in minutes: 5, 10, 20, 40, then 60 for every attempt after that. */
 export const BACKOFF_MINUTES = [5, 10, 20, 40, 60] as const;
@@ -146,7 +147,7 @@ async function restartLane(d: Deps, lane: Lane, kickoff: string): Promise<string
   const stop = await stopAgent(d, lane.sessionRef);
   if (stop !== "shell") return stop === "gone" ? "the pane is gone" : "the agent did not exit";
   try {
-    await rt.start(lane.sessionRef, `${d.agentCmd} ${shq(kickoff)}`);
+    await rt.start(lane.sessionRef, composeLaneCommand(d.agentCmd, lane.model ?? UNPINNED_MODEL, shq(kickoff)));
     return undefined;
   } catch (e) {
     return `start failed: ${failureDetail(e)}`;

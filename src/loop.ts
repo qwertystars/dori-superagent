@@ -6,6 +6,7 @@ import type { Deps } from "./harness.ts";
 import { tellLead } from "./inbox.ts";
 import { startLane } from "./lanes.ts";
 import { audit, HOUR } from "./loop-audit.ts";
+import { mismatchTags } from "./model-receipt.ts";
 import { acquire, holds, release } from "./loop-lock.ts";
 import { refText } from "./refs.ts";
 import type { LoopRun } from "./store-types.ts";
@@ -177,6 +178,9 @@ export async function loopTick(d: Deps, opts: LoopOpts = {}): Promise<LoopRun> {
     const run: LoopRun = { at: d.now(), synced: [], findings: [], started: [], held: [], asked: [] };
     await sync(d, run);
     await audit(d, run);
+    // A lane running another model than the one it was pinned to is a finding on every run: the lead is told each hour
+    // through the same [LOOP ...] message, tagged exactly as dori status tags it.
+    run.findings.push(...mismatchTags(d, d.store.lanes()));
     await pull(d, run, maxLanes, maxStarts, opts.maxLoad, lock.nonce);
     ask(d, run);
     const items = d.store.items();
